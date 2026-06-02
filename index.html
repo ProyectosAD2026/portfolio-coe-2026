@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AD Portfolio COE 2026</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 :root{
@@ -138,9 +138,25 @@ body{font-family:'DM Sans',sans-serif;background:var(--surface);color:var(--navy
   <span class="hdr-badge" id="hdr-cnt">Cargando...</span>
 </div>
 
-<div id="loading" class="loading">
-  <div class="spinner"></div>
-  <div style="font-size:13px;color:var(--g3);">Conectando con Supabase...</div>
+<!-- DROP ZONE -->
+<div id="drop-wrap" style="padding:20px;">
+  <div id="drop-zone" style="border:2px dashed var(--g2);border-radius:14px;padding:32px 20px;text-align:center;background:#fff;cursor:pointer;transition:all .2s;"
+    ondrop="handleDrop(event)" ondragover="e=>{e.preventDefault();document.getElementById('drop-zone').style.borderColor='var(--navy)'}" 
+    ondragleave="document.getElementById('drop-zone').style.borderColor='var(--g2)'">
+    <div style="font-size:36px;margin-bottom:12px;">📂</div>
+    <div style="font-size:15px;font-weight:600;color:var(--navy);margin-bottom:6px;">Arrastrá tu Excel aquí</div>
+    <div style="font-size:12px;color:var(--g3);margin-bottom:14px;">Soltá <strong>Listado_Proyectos_2026.xlsx</strong> para actualizar el portfolio</div>
+    <label style="display:inline-block;padding:8px 20px;background:var(--navy);color:#fff;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">
+      Seleccionar archivo
+      <input type="file" id="file-input" accept=".xlsx,.xls" style="display:none;" onchange="handleFile(this.files[0])">
+    </label>
+    <div style="font-size:11px;color:var(--g3);margin:10px 0;">— o —</div>
+    <span onclick="loadDemo()" style="display:inline-block;padding:8px 20px;background:#fff;color:var(--navy);border:1.5px solid var(--g2);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">Ver datos actuales</span>
+  </div>
+</div>
+<div id="loaded-bar" style="background:#fff;border-bottom:1px solid var(--g1);padding:8px 20px;display:none;align-items:center;justify-content:space-between;font-size:11px;">
+  <span id="loaded-file" style="color:var(--green);font-weight:600;"></span>
+  <span onclick="showDrop()" style="color:var(--g3);cursor:pointer;text-decoration:underline;">Cambiar archivo</span>
 </div>
 
 <div id="app" style="display:none;">
@@ -181,7 +197,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--surface);color:var(--navy
       <div class="grid-4" id="donuts"></div>
       <div class="grid-2">
         <div class="card"><div class="card-t">Matriz Framework · Categoría × Rol</div><div class="matrix-grid" id="matrix"></div></div>
-        <div class="card"><div class="card-t">Impacto × Esfuerzo</div><div class="matrix-grid" id="matrix-ie"></div></div>
+        <div class="card"><div class="card-t">Priorización · Impacto × Esfuerzo</div><div class="matrix-grid" id="matrix-ie"></div><div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;font-size:9px;color:#8a93ab"><span>⚡ Ejecutar ya</span><span>💎 Planificar</span><span>📌 Opcional</span><span>🔄 Reevaluar</span></div></div>
       </div>
     </div>
     <div class="tab-pane" id="tab-analisis">
@@ -221,11 +237,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--surface);color:var(--navy
 </div>
 
 <script>
-const SUPA_URL = 'https://mvwgkngtdihugabvwwcm.supabase.co';
-const SUPA_KEY = 'sb_publishable_UvLRRbnLg7paWCRFonPIVA_xavSbd92';
-const { createClient } = supabase;
-const sb = createClient(SUPA_URL, SUPA_KEY);
-
 const PC = {"Business IT":"#3b6fd4","Foundational IT":"#9b59b6","Digital Customer Experience":"#e8425a","Data & AI":"#2db89e"};
 const HDR = {"Business IT":"#1a5cad","Foundational IT":"#7b3f9e","Digital Customer Experience":"#c0304a","Data & AI":"#1a9079"};
 const PS = {"Business IT":"Business IT","Foundational IT":"Found. IT","Digital Customer Experience":"Digital CX","Data & AI":"Data & AI"};
@@ -233,14 +244,146 @@ const F = { pilar:new Set(["Business IT","Foundational IT","Digital Customer Exp
 
 let ALL = [];
 
-async function init(){
-  const { data, error } = await sb.from('projects').select('*').order('id');
-  if(error){ document.querySelector('.loading div:last-child').textContent = 'Error: ' + error.message; return; }
-  ALL = data;
-  document.getElementById('loading').style.display = 'none';
+// ── DEMO DATA ──
+const DEMO = [
+{"id":1,"pilar":"Business IT","iniciativa":"Transformación Supply Chain","nombre":"Pedido Sugerido","descripcion":"Optimiza pedidos en base a demanda proyectada","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Diego Marin","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"MEDIO","esfuerzo":"MEDIO","bv":0,"rol":"Perform","pct":0.35},
+{"id":2,"pilar":"Business IT","iniciativa":"Transformación Supply Chain","nombre":"Inventario Central BRASIL","descripcion":"Centraliza inventario y mejora la visibilidad","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Diego Marin","modalidad":"Piloto","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":1099016,"rol":"Transform","pct":0.6},
+{"id":3,"pilar":"Business IT","iniciativa":"Transformación Supply Chain","nombre":"Proceso Proyecciones DR","descripcion":"Mejora la precision de la demanda","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Diego Marin","modalidad":"Piloto","etapa":"WIP","impacto":"ALTO","esfuerzo":"MEDIO","bv":0,"rol":"Perform","pct":0.8},
+{"id":4,"pilar":"Business IT","iniciativa":"Transformación Supply Chain","nombre":"Mc Proveedores - Gestion Calidad","descripcion":"Asegura compliance y trazabilidad de proveedores","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Diego Marin","modalidad":"Piloto","etapa":"WIP","impacto":"BAJO","esfuerzo":"MEDIO","bv":0,"rol":"Perform","pct":0.6},
+{"id":5,"pilar":"Business IT","iniciativa":"Transformación Supply Chain","nombre":"Promociones","descripcion":"Mejora planificacion de campanas","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Diego Marin","modalidad":"Piloto","etapa":"WIP","impacto":"ALTO","esfuerzo":"MEDIO","bv":0,"rol":"Perform","pct":0.8},
+{"id":6,"pilar":"Business IT","iniciativa":"Transformación Supply Chain","nombre":"Agente conversacional logistico","descripcion":"Datos logisticos en tiempo real","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Diego Marin","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"MEDIO","esfuerzo":"MEDIO","bv":0,"rol":"Transform","pct":0.8},
+{"id":7,"pilar":"Business IT","iniciativa":"Transformación Supply Chain","nombre":"Modelo CLM 100% BRASIL","descripcion":"Ordena el proceso de compras y contratos","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Diego Marin","modalidad":"Piloto","etapa":"WIP","impacto":"ALTO","esfuerzo":"MEDIO","bv":0,"rol":"Transform","pct":0.35},
+{"id":8,"pilar":"Business IT","iniciativa":"Transformación Supply Chain","nombre":"Migracion a Oracle Fusion","descripcion":"Modernizacion del ERP y eficiencia","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Diego Marin","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":790000,"rol":"Transform","pct":0.6},
+{"id":9,"pilar":"Business IT","iniciativa":"Finanzas","nombre":"Factura Digital","descripcion":"Digitaliza facturacion reduce papel","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Diego Marin","modalidad":"Piloto","etapa":"WIP","impacto":"MEDIO","esfuerzo":"MEDIO","bv":0,"rol":"Perform","pct":0.8},
+{"id":10,"pilar":"Business IT","iniciativa":"Operaciones","nombre":"Camaras + Balanza de DLV","descripcion":"Mejora la precision de armados de pedidos","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Diego Marin","modalidad":"Piloto","etapa":"BACKLOG","impacto":"MEDIO","esfuerzo":"MEDIO","bv":0,"rol":"Perform","pct":0.35},
+{"id":11,"pilar":"Business IT","iniciativa":"Operaciones","nombre":"SESAME","descripcion":"Nuevo POS que mejora atencion y estabilidad","categoria":"Mandatorio","subcategoria":"McD Corp","po":"Diego Marin","modalidad":"Piloto","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.6},
+{"id":12,"pilar":"Business IT","iniciativa":"Finanzas","nombre":"Reforma Tributaria BR","descripcion":"Adaptacion a normativa fiscal Brasilera","categoria":"Mandatorio","subcategoria":"Fiscales","po":"Diego Marin","modalidad":"Piloto","etapa":"WIP","impacto":"MEDIO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.8},
+{"id":13,"pilar":"Business IT","iniciativa":"Finanzas","nombre":"French GAAP","descripcion":"Estandarizacion contable","categoria":"Mandatorio","subcategoria":"Fiscales","po":"Diego Marin","modalidad":"Piloto","etapa":"WIP","impacto":"BAJO","esfuerzo":"MEDIO","bv":0,"rol":"Perform","pct":0.35},
+{"id":14,"pilar":"Business IT","iniciativa":"Operaciones","nombre":"Sensor camaras de frio","descripcion":"Controla apertura de camaras de frio","categoria":"Mandatorio","subcategoria":"Organico/Eficiencia","po":"Diego Marin","modalidad":"Piloto","etapa":"BACKLOG","impacto":"BAJO","esfuerzo":"BAJO","bv":0,"rol":"Perform","pct":0.6},
+{"id":15,"pilar":"Business IT","iniciativa":"Finanzas","nombre":"Kyriba Fase II","descripcion":"Ampliacion solucion de tesoreria","categoria":"Mandatorio","subcategoria":"Riesgo/Compliance","po":"Diego Marin","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.6},
+{"id":16,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"Cyberseguridad","descripcion":"Fortalecer la seguridad y reducir ataques","categoria":"Mandatorio","subcategoria":"Riesgo/Compliance","po":"Leo Abondanza","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.8},
+{"id":17,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"Backlevel Windows 10","descripcion":"Equipos fuera de soporte sin parches","categoria":"Mandatorio","subcategoria":"Riesgo/Compliance","po":"Leo Abondanza","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.6},
+{"id":18,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"Instalacion S1 en restaurants","descripcion":"Cobertura de seguridad endpoint","categoria":"Mandatorio","subcategoria":"McD Corp","po":"Leo Abondanza","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.6},
+{"id":19,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"Renovacion Fortigate","descripcion":"Infraestructura de red obsoleta","categoria":"Mandatorio","subcategoria":"Riesgo/Compliance","po":"Adrian Eidelstein","modalidad":"Ejecucion Directa","etapa":"BACKLOG","impacto":"ALTO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.8},
+{"id":20,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"Bloquear IAs No Homologadas","descripcion":"Control de herramientas de IA no aprobadas","categoria":"Mandatorio","subcategoria":"Riesgo/Compliance","po":"Adrian Eidelstein","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"MEDIO","esfuerzo":"MEDIO","bv":0,"rol":"Perform","pct":0.35},
+{"id":21,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"Agente virtual en oficinas","descripcion":"Automatizar consultas repetitivas","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Alejandra Occhiuto","modalidad":"Piloto","etapa":"WIP","impacto":"MEDIO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.6},
+{"id":22,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"Digitalizacion Invgate","descripcion":"Gestion de incidencias de mantenimiento","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Alejandra Occhiuto","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"MEDIO","esfuerzo":"MEDIO","bv":0,"rol":"Transform","pct":0.8},
+{"id":23,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"Copilot Limitar acceso","descripcion":"Control de permisos en Copilot","categoria":"Mandatorio","subcategoria":"Riesgo/Compliance","po":"Alejandra Occhiuto","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"MEDIO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.35},
+{"id":24,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"Tanium","descripcion":"Control centralizado sobre dispositivos","categoria":"Mandatorio","subcategoria":"Riesgo/Compliance","po":"Leo Abondanza","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"MEDIO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.6},
+{"id":25,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"Baja Access Manager","descripcion":"Eliminar duplicidad de sistemas de identidad","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Gabriela Biscay","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"BAJO","esfuerzo":"MEDIO","bv":20000,"rol":"Perform","pct":0.8},
+{"id":26,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"Threatlocker VZ","descripcion":"Control de aplicaciones no autorizadas","categoria":"Mandatorio","subcategoria":"Riesgo/Compliance","po":"Brian Orieta","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"MEDIO","bv":0,"rol":"Perform","pct":0.6},
+{"id":27,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"Intune celulares","descripcion":"Control corporativo dispositivos moviles","categoria":"Mandatorio","subcategoria":"Riesgo/Compliance","po":"Diego Fernandez","modalidad":"Piloto","etapa":"WIP","impacto":"ALTO","esfuerzo":"MEDIO","bv":0,"rol":"Perform","pct":0.8},
+{"id":28,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"Migracion VMWare a Hyper-V","descripcion":"Cambio de plataforma de virtualizacion","categoria":"Mandatorio","subcategoria":"Riesgo/Compliance","po":"Juan Manuel Nazabal","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"MEDIO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.55},
+{"id":29,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"FSite Check","descripcion":"Validacion de sistemas en los locales","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"G. Zourdjian","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"MEDIO","esfuerzo":"ALTO","bv":0,"rol":"Transform","pct":0.55},
+{"id":30,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"Tibco a AWS","descripcion":"Migracion de integraciones a AWS","categoria":"Mandatorio","subcategoria":"Riesgo/Compliance","po":"Diego Rui Diaz","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"MEDIO","esfuerzo":"ALTO","bv":500000,"rol":"Perform","pct":0.55},
+{"id":31,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"Datalakehouse SOX","descripcion":"Plataforma de datos con controles SOX","categoria":"Mandatorio","subcategoria":"Riesgo/Compliance","po":"Laureano Rodriguez","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.55},
+{"id":32,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"Pipefy en scope SOX","descripcion":"Adecuacion de procesos para auditoria","categoria":"Mandatorio","subcategoria":"Riesgo/Compliance","po":"Laureano Rodriguez","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"MEDIO","bv":0,"rol":"Perform","pct":0.55},
+{"id":33,"pilar":"Foundational IT","iniciativa":"Foundational IT","nombre":"AuditarPays CH SOX","descripcion":"Auditoria de pagos en Chile","categoria":"Mandatorio","subcategoria":"Riesgo/Compliance","po":"Laureano Rodriguez","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"BAJO","bv":0,"rol":"Perform","pct":0.55},
+{"id":34,"pilar":"Digital Customer Experience","iniciativa":"Digital CX","nombre":"Small Order Fee DLVP","descripcion":"Cargo adicional para pedidos chicos","categoria":"Valor","subcategoria":"Organico/Venta","po":"Felipe Mejia","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"BAJO","bv":190000,"rol":"Perform","pct":0.55},
+{"id":35,"pilar":"Digital Customer Experience","iniciativa":"Digital CX","nombre":"Loyalty 3POs","descripcion":"Puntos de fidelidad en apps externas","categoria":"Valor","subcategoria":"Organico/Venta","po":"Felipe Mejia","modalidad":"Piloto","etapa":"BACKLOG","impacto":"MEDIO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.55},
+{"id":36,"pilar":"Digital Customer Experience","iniciativa":"Digital CX","nombre":"Retail Media","descripcion":"Espacio para marcas en la app","categoria":"Valor","subcategoria":"Negocio Inorganico","po":"Carla Lanzilotta","modalidad":"Piloto","etapa":"WIP","impacto":"MEDIO","esfuerzo":"MEDIO","bv":200000,"rol":"Transform","pct":0.55},
+{"id":37,"pilar":"Digital Customer Experience","iniciativa":"Digital CX","nombre":"Menu Reducido DLV","descripcion":"Simplificacion del menu en delivery","categoria":"Valor","subcategoria":"Organico/Venta","po":"Felipe Mejia","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"MEDIO","esfuerzo":"BAJO","bv":2008000,"rol":"Perform","pct":0.55},
+{"id":38,"pilar":"Digital Customer Experience","iniciativa":"Digital CX","nombre":"Inexactitud Real Time","descripcion":"Corregir errores en pedidos en tiempo real","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Felipe Mejia","modalidad":"Piloto","etapa":"BACKLOG","impacto":"MEDIO","esfuerzo":"MEDIO","bv":300000,"rol":"Perform","pct":0.55},
+{"id":39,"pilar":"Digital Customer Experience","iniciativa":"Digital CX","nombre":"CDP NGK","descripcion":"Digitalizar el centro de postre","categoria":"Valor","subcategoria":"Organico/Venta","po":"Diego Marin","modalidad":"Piloto","etapa":"WIP","impacto":"MEDIO","esfuerzo":"MEDIO","bv":0,"rol":"Perform","pct":0.55},
+{"id":40,"pilar":"Digital Customer Experience","iniciativa":"Digital CX","nombre":"Lockers Amazon","descripcion":"Lockers en locales de Amazon","categoria":"Valor","subcategoria":"Organico/Venta","po":"Felipe Mejia","modalidad":"Piloto","etapa":"BACKLOG","impacto":"ALTO","esfuerzo":"ALTO","bv":14500,"rol":"Perform","pct":0.55},
+{"id":41,"pilar":"Digital Customer Experience","iniciativa":"Digital CX","nombre":"Alianza Mercado Pago","descripcion":"Integracion con Mercado Pago","categoria":"Valor","subcategoria":"Organico/Venta","po":"Romina Turek","modalidad":"Piloto","etapa":"WIP","impacto":"MEDIO","esfuerzo":"BAJO","bv":200000,"rol":"Perform","pct":0.55},
+{"id":42,"pilar":"Digital Customer Experience","iniciativa":"Digital CX","nombre":"Reserva cumpleanos APP","descripcion":"Reserva de pedidos de cumpleanos por app","categoria":"Valor","subcategoria":"Organico/Venta","po":"Carla Lanzilotta","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":200000,"rol":"Perform","pct":0.55},
+{"id":43,"pilar":"Digital Customer Experience","iniciativa":"Digital CX","nombre":"Validacion Imagenes Catalogo","descripcion":"Agente IA para imagenes de productos","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Carla Lanzilotta","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"BAJO","esfuerzo":"BAJO","bv":50000,"rol":"Perform","pct":0.55},
+{"id":44,"pilar":"Digital Customer Experience","iniciativa":"Digital CX","nombre":"Validacion Imagenes AI","descripcion":"IA para errores en imagenes de pedidos","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Juan Horgan","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"MEDIO","esfuerzo":"BAJO","bv":100000,"rol":"Perform","pct":0.55},
+{"id":45,"pilar":"Digital Customer Experience","iniciativa":"Loyalty","nombre":"Canje Loyalty Kiosco","descripcion":"Canjear puntos en kioscos","categoria":"Valor","subcategoria":"Organico/Venta","po":"Diego Marin","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":10000000,"rol":"Perform","pct":0.55},
+{"id":46,"pilar":"Digital Customer Experience","iniciativa":"Digital CX","nombre":"Precio diferenciado 3PO","descripcion":"Tarifario diferencial por 3PO","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Diego Marin","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":200000,"rol":"Perform","pct":0.55},
+{"id":47,"pilar":"Digital Customer Experience","iniciativa":"Digital CX","nombre":"ADK vs ksharp","descripcion":"Evaluacion de sistemas de kioscos","categoria":"Valor","subcategoria":"Organico/Venta","po":"Diego Marin","modalidad":"Piloto","etapa":"BACKLOG","impacto":"ALTO","esfuerzo":"ALTO","bv":700000,"rol":"Perform","pct":0.55},
+{"id":48,"pilar":"Data & AI","iniciativa":"Real Estate","nombre":"Estimacion de ventas","descripcion":"Predice ventas de un restaurante","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Juan Horgan","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":0,"rol":"Transform","pct":0.55},
+{"id":49,"pilar":"Data & AI","iniciativa":"Real Estate","nombre":"Modelo comparables","descripcion":"Datos de restaurantes similares","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Juan Horgan","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":0,"rol":"Transform","pct":0.55},
+{"id":50,"pilar":"Data & AI","iniciativa":"Real Estate","nombre":"Tiempo de permanencia","descripcion":"Metrica de tiempo de clientes","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Juan Horgan","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.55},
+{"id":51,"pilar":"Data & AI","iniciativa":"Real Estate","nombre":"Grupo promedio","descripcion":"Indicador de grupos de clientes","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Juan Horgan","modalidad":"Ejecucion Directa","etapa":"BACKLOG","impacto":"ALTO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.55},
+{"id":52,"pilar":"Data & AI","iniciativa":"Real Estate","nombre":"5 Agentes conversacionales","descripcion":"Asistentes IA para eficiencia operativa","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Juan Horgan","modalidad":"Ejecucion Directa","etapa":"BACKLOG","impacto":"ALTO","esfuerzo":"ALTO","bv":0,"rol":"Transform","pct":0.55},
+{"id":53,"pilar":"Data & AI","iniciativa":"Real Estate","nombre":"Reporting Real Estate","descripcion":"Reportes y dashboards del negocio","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Juan Horgan","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.55},
+{"id":54,"pilar":"Data & AI","iniciativa":"DCE + Mk","nombre":"Agentic promotions CR","descripcion":"Promociones por IA en Costa Rica","categoria":"Valor","subcategoria":"Organico/Venta","po":"Fede Calabria","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":0,"rol":"Transform","pct":0.55},
+{"id":55,"pilar":"Data & AI","iniciativa":"DCE + Mk","nombre":"Eliminacion de AOP","descripcion":"Simplificacion de procesos innecesarios","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Fede Calabria","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":100000,"rol":"Perform","pct":0.55},
+{"id":56,"pilar":"Data & AI","iniciativa":"DCE + Mk","nombre":"Pricing","descripcion":"Optimizacion de precios segun demanda","categoria":"Valor","subcategoria":"Organico/Venta","po":"Fede Calabria","modalidad":"Ejecucion Directa","etapa":"BACKLOG","impacto":"ALTO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.55},
+{"id":57,"pilar":"Data & AI","iniciativa":"Operaciones","nombre":"ALPR","descripcion":"Reconocimiento de patentes en drive thru","categoria":"Valor","subcategoria":"Organico/Venta","po":"Elias Lopez","modalidad":"Piloto","etapa":"BACKLOG","impacto":"BAJO","esfuerzo":"ALTO","bv":0,"rol":"Transform","pct":0.55},
+{"id":58,"pilar":"Data & AI","iniciativa":"DCE + Mk","nombre":"Voice Ordering","descripcion":"Pedidos por voz automatizados","categoria":"Valor","subcategoria":"Organico/Venta","po":"Fede Calabria","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"BAJO","esfuerzo":"ALTO","bv":0,"rol":"Transform","pct":0.55},
+{"id":59,"pilar":"Data & AI","iniciativa":"AI en procesos","nombre":"Facturas de alquileres","descripcion":"Automatizacion de facturas de alquiler","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Fernando Benedeto","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"BAJO","bv":800000,"rol":"Perform","pct":0.55},
+{"id":60,"pilar":"Data & AI","iniciativa":"AI en procesos","nombre":"Proyeccion GCs para Caja","descripcion":"Modelo de flujo de efectivo de locales","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Lucas Brizuela","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"BAJO","bv":2000000,"rol":"Perform","pct":0.55},
+{"id":61,"pilar":"Digital Customer Experience","iniciativa":"Wallet","nombre":"Wallet Argentina","descripcion":"Billetera digital de Arcos Dorados","categoria":"Valor","subcategoria":"Negocio Inorganico","po":"Romina Ayzaguer","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"BAJO","esfuerzo":"ALTO","bv":0,"rol":"Transform","pct":0.55},
+{"id":62,"pilar":"Digital Customer Experience","iniciativa":"Loyalty","nombre":"Loyalty","descripcion":"Programa de fidelizacion","categoria":"Valor","subcategoria":"Organico/Venta","po":"Romina Ayzaguer","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.55},
+{"id":63,"pilar":"Data & AI","iniciativa":"Data & AI","nombre":"Data & AI Academy","descripcion":"Capacitacion en datos e IA","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Soledad Dallinger","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"MEDIO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.55},
+{"id":64,"pilar":"Data & AI","iniciativa":"Data & AI","nombre":"Migracion Data Factory","descripcion":"Migracion de actualizacion de tablas","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Fernando Benedeto","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"BAJO","esfuerzo":"MEDIO","bv":50000,"rol":"Perform","pct":0.55},
+{"id":65,"pilar":"Data & AI","iniciativa":"AI en procesos","nombre":"ESG","descripcion":"Gestion ESG de proveedores","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Fernando Benedeto","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"BAJO","esfuerzo":"BAJO","bv":0,"rol":"Perform","pct":0.55},
+{"id":66,"pilar":"Data & AI","iniciativa":"Data & AI","nombre":"Knowledge assistant HU","descripcion":"Asistente conversacional para HU","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Fernando Benedeto","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"MEDIO","esfuerzo":"BAJO","bv":0,"rol":"Transform","pct":0.55},
+{"id":67,"pilar":"Data & AI","iniciativa":"Data & AI","nombre":"Single Source Of Truth","descripcion":"Fuente unica de verdad del negocio","categoria":"Valor","subcategoria":"Organico/Eficiencia","po":"Fernando Benedeto","modalidad":"Ejecucion Directa","etapa":"WIP","impacto":"ALTO","esfuerzo":"ALTO","bv":0,"rol":"Perform","pct":0.55}
+];
+
+// ── EXCEL PARSER ──
+function handleDrop(e){ e.preventDefault(); document.getElementById('drop-zone').style.borderColor='var(--g2)'; handleFile(e.dataTransfer.files[0]); }
+
+function handleFile(file){
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const wb = XLSX.read(ev.target.result, {type:'array'});
+      const sheetName = wb.SheetNames.find(n=>n.toLowerCase().includes('proyectos')) || wb.SheetNames[0];
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:''});
+      ALL = parseRows(rows);
+      showDashboard(file.name + ' · ' + ALL.length + ' proyectos');
+    } catch(err){ alert('Error leyendo el archivo: ' + err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function n(v){ return (v||'').toString().trim(); }
+function nu(v){ return n(v).toUpperCase().replace(/\s+/g,''); }
+
+function parseRows(rows){
+  return rows.map((r,i)=>{
+    const nombre = n(r['Proyectos']||r['nombre']||r['Nombre']||'');
+    if(!nombre) return null;
+    const rawPct = r['% cumplimiento']||r['pct']||0;
+    const pctVal = parseFloat(rawPct)||0;
+    const pct = pctVal > 1 ? pctVal/100 : pctVal;
+    return {
+      id:i+1,
+      pilar: n(r['Pilar']||r['pilar']||''),
+      iniciativa: n(r['Iniciativa/ Disciplina donde impacta']||r['Iniciativa']||r['iniciativa']||''),
+      nombre,
+      descripcion:n(r['Descripción']||r['Descripcion']||r['descripcion']||''),
+      categoria: n(r['Valor']||r['Categoría']||r['Categoria']||r['categoria']||''),
+      subcategoria:n(r['Subcategoría']||r['Subcategoria']||r['subcategoria']||''),
+      po: n(r['PO']||r['po']||''),
+      modalidad: n(r['Ejecución Directa/Piloto']||r['modalidad']||r['Modalidad']||''),
+      etapa: nu(r['Etapa']||r['etapa']||''),
+      impacto: nu(r['Impacto']||r['impacto']||''),
+      esfuerzo: nu(r['Esfuerzo']||r['esfuerzo']||''),
+      bv: parseFloat(r['BV']||r['bv']||0)||0,
+      rol: n(r['Rol del proyecto']||r['rol']||r['Rol']||''),
+      pct
+    };
+  }).filter(Boolean);
+}
+
+function loadDemo(){
+  ALL = DEMO.map(p=>({...p}));
+  showDashboard('Datos actuales · ' + ALL.length + ' proyectos');
+}
+
+function showDashboard(label){
+  document.getElementById('drop-wrap').style.display = 'none';
+  const lb = document.getElementById('loaded-bar');
+  lb.style.display = 'flex';
+  document.getElementById('loaded-file').textContent = '✓ ' + label;
   document.getElementById('app').style.display = 'block';
   renderAll();
 }
+
+function showDrop(){
+  document.getElementById('drop-wrap').style.display = 'block';
+  document.getElementById('loaded-bar').style.display = 'none';
+  document.getElementById('app').style.display = 'none';
+}
+
+function init(){ loadDemo(); }
 
 function getFiltered(){
   const q = (document.getElementById('search').value||'').toLowerCase().trim();
@@ -317,8 +460,13 @@ function renderAll(){
   const mx1=[{cat:'Valor',rol:'Perform',bg:'#e8f5e9',tc:'#2e7d32',e:'⚡',l:'Quick Wins'},{cat:'Mandatorio',rol:'Perform',bg:'#fff8e1',tc:'#e65100',e:'🔧',l:'Operación'},{cat:'Valor',rol:'Transform',bg:'#e3f2fd',tc:'#1565c0',e:'🚀',l:'Innovación'},{cat:'Mandatorio',rol:'Transform',bg:'#fce4ec',tc:'#c62828',e:'⚠️',l:'Trans. Obl.'}];
   document.getElementById('matrix').innerHTML=mx1.map(q=>{ const c=data.filter(p=>p.categoria===q.cat&&p.rol===q.rol).length; return `<div class="m-cell" style="background:${q.bg}"><div class="m-label" style="color:${q.tc}">${q.e} ${q.l}</div><div class="m-count" style="color:${q.tc}">${c}</div><div class="m-sub" style="color:${q.tc}">${q.cat} · ${q.rol}</div></div>`; }).join('');
 
-  const mx2=[{imp:'ALTO',esf:'BAJO',bg:'#e8f5e9',tc:'#2e7d32',e:'🎯',l:'Oportunidad'},{imp:'ALTO',esf:'ALTO',bg:'#e3f2fd',tc:'#1565c0',e:'💎',l:'Grandes Apuestas'},{imp:'BAJO',esf:'BAJO',bg:'#f5f5f5',tc:'#616161',e:'📌',l:'Fill-in'},{imp:'BAJO',esf:'ALTO',bg:'#fce4ec',tc:'#c62828',e:'❓',l:'Reconsiderar'}];
-  document.getElementById('matrix-ie').innerHTML=mx2.map(q=>{ const c=data.filter(p=>p.impacto===q.imp&&p.esfuerzo===q.esf).length; return `<div class="m-cell" style="background:${q.bg}"><div class="m-label" style="color:${q.tc}">${q.e} ${q.l}</div><div class="m-count" style="color:${q.tc}">${c}</div><div class="m-sub" style="color:${q.tc}">Imp.${q.imp} · Esf.${q.esf}</div></div>`; }).join('');
+  const mx2=[
+    {imp:'ALTO',esf:'BAJO',bg:'#e8f5e9',tc:'#2e7d32',e:'⚡',l:'Quick Wins',sub:'Ejecutar ya'},
+    {imp:'ALTO',esf:'ALTO',bg:'#e3f2fd',tc:'#1565c0',e:'💎',l:'Iniciativas Estratégicas',sub:'Planificar'},
+    {imp:'BAJO',esf:'BAJO',bg:'#f5f5f5',tc:'#616161',e:'📌',l:'Iniciativas Tácticas',sub:'Opcional'},
+    {imp:'BAJO',esf:'ALTO',bg:'#fce4ec',tc:'#c62828',e:'🔄',l:'A Revisar',sub:'Reevaluar'},
+  ];
+  document.getElementById('matrix-ie').innerHTML=mx2.map(q=>{ const c=data.filter(p=>p.impacto===q.imp&&p.esfuerzo===q.esf).length; return `<div class="m-cell" style="background:${q.bg}"><div class="m-label" style="color:${q.tc}">${q.e} ${q.l}</div><div class="m-count" style="color:${q.tc}">${c}</div><div class="m-sub" style="color:${q.tc}">${q.sub} · Imp.${q.imp} / Esf.${q.esf}</div></div>`; }).join('');
 
   const ie=Object.entries(cntBy(data,'iniciativa')).sort((a,b)=>b[1]-a[1]).slice(0,10);
   const se=Object.entries(cntBy(data,'subcategoria')).sort((a,b)=>b[1]-a[1]);
